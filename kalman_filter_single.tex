@@ -1,68 +1,95 @@
-% Created 2016-07-27 周三 19:10
-\documentclass[10pt,journal,onecolumn]{IEEEtran}
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage{fixltx2e}
+\documentclass[UTF8]{ctexart}
 \usepackage{graphicx}
-\usepackage{longtable}
-\usepackage{float}
-\usepackage{wrapfig}
-\usepackage{rotating}
-\usepackage[normalem]{ulem}
 \usepackage{amsmath}
-\usepackage{textcomp}
-\usepackage{marvosym}
-\usepackage{wasysym}
 \usepackage{amssymb}
 \usepackage{hyperref}
-\tolerance=1000
-\usepackage{xeCJK}% 调用 xeCJK 宏包
-\setCJKmainfont{SimSun}% 设置 CJK 主字体为 SimSun （宋体）
 \date{}
-\title{Kalman Filter 实战作业}
-\hypersetup{
-  pdfkeywords={},
-  pdfsubject={},
-  pdfcreator={Emacs 24.5.1 (Org mode 8.2.10)}}
+\title{Kalman Filter 基础知识}
 \begin{document}
 
 \maketitle
-\section{引言}
-\label{sec-1}
-庆丰三年夏，董老师小讲kalman，谓吾等自行操练Kalman的formula，故有此记。
-\section{初识Kalman}
-\label{sec-2}
-我研一已经看过了有关Kalman的books，只记得其时间更新以及状态更新的思想很深刻，过去两年后又有了新的感悟。在《Optimal State Estimation》一书中，作者是从递归最小二乘(RLS)，很自然地过渡到Kalman Filter的。RLS产生的一个重要需求就是要递归估计，而不是batch mode，即：
-\begin{IEEEeqnarray}{ll}
-y_k&=H_kx_k+v_k \\
-x_k&=\hat{x}_{k-1}+K_k(y_k-H_k\hat{x}_{k-1})
-\end{IEEEeqnarray}
-问题转化为如何求\(K_k\).
 
-当然了，对于一个estimation任务，很自然的要先确定如何衡量这个estimation的好坏，而这个衡量标准（criterion）又可以作为我们的目标函数。在RLS中，如果将估计误差（即\(x-\hat{x}\))的期望\(E(\epsilon_{x,k})\)作为目标函数，对于零均值的测量噪声以及理想的状态初始值来说，则在对\(E(\epsilon_{x,k})\)进行递归估计时得不出什么重要信息（详见P84). 因此不得不另选一个目标函数，即估计误差的方差之和\(J_k=Trace(P_k)\)。通过简单的求导即可得到更新公式：
-\begin{IEEEeqnarray}{ll}
-K_k&=P_{k-1}H^T_k(H_kP_{k-1}H^T+R_k)^- \\
-\hat{x}_k&=\hat{x}_{k-1}+K_k(y_k-H_k\hat{x}_{k-1}) \\
+\section{卡尔曼滤波简介}
+本小节\footnote{为了与常规用法一致，本节使用 $x$ 代表状态。}先简要介绍卡尔曼滤波（Kalman Filtering，简称：KF），下一小节将介绍 EKF 并将其用于参数的学习。
+关于 KF 和 EKF 的详细描述可参阅文献:
+[1]SIMON D. Optimal state estimation: Kalman, H [infinity] and nonlinear approaches[M]. Hoboken, N.J: Wiley-Interscience, 2006.
+
+
+KF 可以由递归最小二乘（RLS）简单扩展得到。
+在 LS 中，测量的增多会导致极大的计算量，而 RLS 则可以递归地对状态进行估计。即，对于一个状态恒为 $x$ 的系统，其测量方程为：
+\begin{equation}
+  \label{eq:rls_observe}
+  y_k =H_kx + v_k
+\end{equation}
+式中，$y_k$ 为 $k$ 时刻的测量值，$H_k$ 为 $k$ 时刻的测量矩阵，$v_k$ 为测量误差，其协方差矩阵记为 $R_k$。
+RLS 的目标是寻找 $k$ 时刻的增益矩阵 $K_k$，使得 $k$ 时刻的状态估计 $\hat{x}_k$ 与 $k-1$ 时刻的状态估计 $\hat{x}_{k-1}$ 满足：
+\begin{equation}
+  \label{eq:12}
+  \hat{x}_k =\hat{x}_{k-1}+K_k(y_k-H_k\hat{x}_{k-1})
+\end{equation}
+若以 $\epsilon_{x,k}=x-\hat{x}_k$ 代表 $k$ 时刻的估计误差，$P_k=E(\epsilon_{x,k}\epsilon_{x,k}^T)$ 代表此刻的估计误差协方差矩阵，则最小化目标函数 $Tr(P_k)$\footnote{$E[(x_1-\hat{x}_1)^2+\ldots+(x_n-\hat{x}_n)^2]=E[\epsilon_{x_1,k}^2+\ldots+\epsilon_{x_n,k}^2]=E[\epsilon_{x,k}^T\epsilon_{x,k}]=E[Tr(\epsilon_{x,k}\epsilon_{x,k}^T)]=Tr(P_k).$}可得\footnote{此处亦可理解为 RLS 的测量更新方程。}：
+\begin{align}
+K_k&=P_{k-1}H^T_k(H_kP_{k-1}H^T+R_k)^{-1} \\
 P_k&=(I-K_kH_k)P_{k-1}(I-K_kH_k)^T+K_kR_kK_k^T
-\end{IEEEeqnarray}
-当然，在RLS中，我们假定要估计的state是constant的。what if not? Then comes the Kalman Filter! 也就是说RLS中我们只有测量方程，现在需要考虑加入时间更新方程：
+\end{align}
+
+若放松 RLS 中状态 $x$ 恒定的假设，令：
 \begin{equation}
 x_k=F_{k-1}x_{k-1}+G_{k-1}u_{k-1}+\omega_{k-1}
 \end{equation}
-此时更新公式只需要加入:（详见P128)
+式中，$u_k$ 为已知输入，$\omega_k$ 为协方差为 $Q_k$ 的零均值高斯白噪声。
+此时，\eqref{eq:rls_observe} 亦变为：
 \begin{equation}
-P_{k-1}=F_{k-1}P^1_{k-1}F_{k-1}^T+Q_{k-1}
+  y_k =H_kx_k + v_k
 \end{equation}
-其中\(P^1_{k-1}\)即上一次测量更新得到的\(P_{k-1}\),这里为了和RLS的notation一致，加入了上标1.
-现在回顾一下，RLS和Kalman的区别就是，在RLS中，直接令\(P_{k-1}=P^1_{k-1}\)（因为状态是恒定的嘛），在Kalman中加入了时间更新！这个更新是基于我们对这个system的dynamics的了解来的！
+那么，状态 $x_k$ 的均值的更新方程及其协方差的时间更新方程为：
+\begin{align}
+  \label{eq:rls_relaxed_x}
+  \bar{x}_k &=F_{k-1}\bar{x}_{k-1}+G_{k-1}u_{k-1}\\
+  \label{eq:rls_relaxed_p}   
+  P_{k}&=F_{k-1}P_{k-1}F_{k-1}^T+Q_{k-1}        
+\end{align}
+
+在卡尔曼滤波（KF）的推导中，为了突出时间更新和测量更新，对测量前后状态相关的值加以区分：$\hat{x}_k^-$ 表示 $k$ 时刻的测量值到来之前对状态 $x_k$ 的估计值，$\hat{x}_k^+$ 表示考虑 $k$ 时刻的测量值 $y_k$ 后对状态 $x_k$ 的重新估计值。
+相应地，$P_k^-$ 表示 $\hat{x}_k^-$ 的估计误差的协方差，$P_k^+$  表示 $\hat{x}_k^+$ 表示 $\hat{x}_k^+$ 的估计误差的协方差，即：
+\begin{align}
+  P_k^-&=E[(x_k-\hat{x}_k^-)(x_k-\hat{x}_k^-)^T]\\ 
+  P_k^+&=E[(x_k-\hat{x}_k^+)(x_k-\hat{x}_k^+)^T] 
+\end{align}
+而 KF 的递推公式只需要在 RLS 的基础上稍加更改并结合 \eqref{eq:rls_relaxed_x} 和 \eqref{eq:rls_relaxed_p} 得到。
+KF 的\emph{时间更新方程}为：
+\begin{align}
+  \hat{x}_k^- &=F_{k-1}\hat{x}_{k-1}^++G_{k-1}u_{k-1}\\
+  P_{k}^- &=F_{k-1}P_{k-1}^+F_{k-1}^T+Q_{k-1}       
+\end{align}
+其\emph{测量更新方程}为：
+\begin{align}
+  K_k&=P_{k}^-H^T_k(H_kP_{k}^-H^T+R_k)^{-1} \\
+  P_k^+&=(I-K_kH_k)P_{k}^-(I-K_kH_k)^T+K_kR_kK_k^T\\
+  \hat{x}_k^+ &=\hat{x}_{k}^-+K_k(y_k-H_k\hat{x}_{k}^-)
+\end{align}
+当 $k=1$ 时，KF 需要设置初始化参数：
+\begin{align}
+  \hat{x}_0^+&=E(x_0)\\
+  P_0^+&=E[(x_0-\hat{x}_0^+)(x_0-\hat{x}_0^+)^T] 
+\end{align}
+当 $k=1,2,3,\ldots$ 时，只需要迭代上述时间更新方程和测量更新方程即可获得 $k$ 时刻的状态估计值  $\hat{x}_k^+$。
+
 \section{Kalman for curve fitting（抛物线拟合）}
 \label{sec-3}
 我们认为其parameters，即states为\((a,b,c)\)恒定（实际上把Kalman当RLS来用啦），而测量方程为：
 \begin{equation}
 y[k]=ax[k]^2+bx[k]+c+w[k]
 \end{equation}
-每一次的测量相当于\([x[k]^2,x[k],1\mid y[k]]\).在code中，我们假设\((a,b,c)=(1, 2, 3)\),得到100组测量数据后，最终的estimate为\([ 1.00948328,1.95366774,3.04191686]\)，每一次iteration的结果和error bar如下图所示(注，仅plot了第一个状态即\(a=1\)的estimation结果，其它两个类似就不画了）。
-\includegraphics[width=3.5in]{kalman.jpeg}
+每一次的测量相当于\(y[k]\).在code中，我们假设\((a,b,c)=(1, 2, 3)\),得到100组测量数据后，最终的estimate为\([ 1.00948328,1.95366774,3.04191686]\)，每一次iteration的结果和error bar图~\ref{fig:state_a} 所示\footnote{仅plot了第一个状态即\(a=1\)的estimation结果，其它两个类似就不画。}。
+
+\begin{figure}
+  \centering
+  \includegraphics[width=0.9\columnwidth]{kalman}
+   \caption{状态 $a$ 的估计。}
+  \label{fig:state_a}  
+\end{figure}
+
 \section{附录代码}
 \label{sec-4}
 注意第33行只是简单地将协方差矩阵进行传播，并没有使用时间更新方程。
@@ -135,3 +162,9 @@ y[k]=ax[k]^2+bx[k]+c+w[k]
 \end{verbatim}
 % Emacs 24.5.1 (Org mode 8.2.10)
 \end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% TeX-engine: xetex
+%%% End:
